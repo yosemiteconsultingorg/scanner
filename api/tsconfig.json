@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "es6",
+    "outDir": "dist",
+    "rootDir": ".", // Keep rootDir as "."
+    "sourceMap": true,
+    "strict": false,
+    "moduleResolution": "node", // Add module resolution strategy
+    "skipLibCheck": true, // Skip checking library declaration files
+    "esModuleInterop": true, // Allow default imports from modules with no default export
+    "allowSyntheticDefaultImports": true // Allow default imports from modules with no default export
+  }
+}
