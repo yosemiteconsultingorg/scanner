@@ -126,7 +126,7 @@ function App() {
     console.log(`Polling for result: ${blobName}`);
     const intervalId: number = setInterval(async () => {
       try {
-        const resultResponse = await fetch(`/api/getAnalysisResult?blobName=${encodeURIComponent(blobName)}`);
+        const resultResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/getAnalysisResult?blobName=${encodeURIComponent(blobName)}`);
         if (resultResponse.ok) {
           const result: AnalysisResult = await resultResponse.json();
           console.log(`Received result for ${blobName}:`, result);
@@ -239,14 +239,14 @@ function App() {
     for (const detail of directUploadItems) {
         const fileName = detail.file?.name || 'unknown_file';
         try {
-            const sasResponse = await fetch(`/api/generateUploadUrl?fileName=${encodeURIComponent(fileName)}`);
+            const sasResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/generateUploadUrl?fileName=${encodeURIComponent(fileName)}`);
             if (!sasResponse.ok) throw new Error(`SAS URL fetch failed: ${sasResponse.statusText}`);
             const { uploadUrl, blobName } = await sasResponse.json();
 
             // Update state with blobName before starting upload
             setFileProcessingDetails(prev => prev.map(d => d.file === detail.file ? { ...d, blobName: blobName } : d));
 
-            const metadataResponse = await fetch('/api/setCreativeMetadata', {
+            const metadataResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/setCreativeMetadata`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ blobName: blobName, isCtv: detail.isCtv }),
             });
@@ -292,7 +292,7 @@ function App() {
                 // TODO: Add isCtv flag if UI toggle is implemented for SP files
             }));
 
-            const response = await fetch('/api/processSharepointFiles', {
+            const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/processSharepointFiles`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -331,7 +331,7 @@ function App() {
        if (!blobName) { alert("Cannot preview: Blob name is missing."); return; }
        console.log(`Requesting preview URL for ${blobName}`);
        try {
-           const response = await fetch(`/api/getPreviewUrl?blobName=${encodeURIComponent(blobName)}`);
+           const response = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/getPreviewUrl?blobName=${encodeURIComponent(blobName)}`);
            if (!response.ok) throw new Error(`Failed to get preview URL: ${response.statusText}`);
            const { previewUrl } = await response.json();
            let previewType: PreviewState['type'] = null;
