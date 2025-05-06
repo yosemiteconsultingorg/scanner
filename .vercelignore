@@ -1,0 +1,28 @@
+# Development files
+.git
+.github
+.vscode
+.idea
+.env*
+!.env.example
+
+# Azure Functions-specific files
+api-vercel
+api/src
+api/.vscode
+api/.funcignore
+api/host.json
+
+# Build artifacts
+node_modules
+dist
+.output
+
+# Documentation
+*.md
+!README.md
+Creative_Specifications-en.pdf
+implementationplan.md
+implementationstatus.md
+prd.md
+userflow.md

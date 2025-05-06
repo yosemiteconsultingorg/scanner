@@ -1,0 +1,25 @@
+{
+  "name": "scanner-api",
+  "version": "1.0.0",
+  "description": "Scanner API for Vercel deployment",
+  "dependencies": {
+    "@azure/data-tables": "^13.3.0",
+    "@azure/storage-blob": "^12.27.0",
+    "@azure/identity": "^4.9.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "adm-zip": "^0.5.16",
+    "file-type": "^20.5.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "image-size": "^2.0.2",
+    "isomorphic-fetch": "^3.0.0",
+    "uuid": "^11.1.0",
+    "next": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/node": "18.x",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}
