@@ -105,10 +105,10 @@ function App() {
   const handleLogout = () => { instance.logoutRedirect({ account: account }).catch(e => console.error("Logout failed:", e)); };
 
   // --- File Handlers ---
-  const handleFilesSelected = (files: FileList) => {
+  const handleFilesSelected = (files: File[]) => { // Changed FileList to File[]
     if (isScanning) return;
-    const fileList = Array.from(files);
-    const details: FileDetails[] = fileList.map(file => ({ file: file, isCtv: false, status: 'Pending', uploadProgress: 0 }));
+    // const fileList = Array.from(files); // No longer strictly necessary if files is already File[] but harmless
+    const details: FileDetails[] = files.map(file => ({ file: file, isCtv: false, status: 'Pending', uploadProgress: 0 }));
     setFileProcessingDetails(details);
     setSelectedSharepointFiles([]); // Clear SP selection when direct uploading
     console.log('Files selected:', details);
