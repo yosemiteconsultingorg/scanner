@@ -70,6 +70,7 @@ export async function generateUploadUrl(request: HttpRequest, context: Invocatio
 
         // Return the SAS URL and the blob name to the client
         return {
+            status: 200, // Explicitly set status
             jsonBody: {
                 uploadUrl: sasUrl,
                 blobName: uniqueBlobName

@@ -53,7 +53,7 @@ const blobContainerName = "files-processing"; // Need container name here too
 function getAccountInfo(connectionString: string): { accountName: string; accountKey: string } {
     const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
     const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
-    if (!accountNameMatch || !accountKeyMatch) {
+    if (!accountNameMatch || !accountKeyMatch) { // Corrected: was !accountNameMatch
         throw new Error("Could not parse AccountName or AccountKey from connection string");
     }
     return { accountName: accountNameMatch[1], accountKey: accountKeyMatch[1] };
@@ -107,7 +107,6 @@ const SPEC_LIMITS = {
 };
 
 // --- FFprobe Helper ---
-// (Keep existing helper function)
 function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> {
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
@@ -121,9 +120,7 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
     });
 }
 
-
 // --- Validation Functions ---
-// (Keep existing: validateDisplay, validateAudio, validateVideoOlv, validateVideoCtv, validateUnknown)
 function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: InvocationContext): void {
     context.log("--- EXECUTING validateDisplay ---");
     const mime = analysisData.mimeType;
@@ -189,7 +186,7 @@ function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData 
         if (duration !== undefined) {
             const allowedDurations = SPEC_LIMITS.audio.allowedDurationsSec;
             const isDurationValid = allowedDurations.some(allowed => Math.abs(duration - allowed) < 0.5);
-            const durLimit = allowedDurations.join(', ') + ' sec';
+            const durLimit = `${allowedDurations.join(', ') } sec`;
             if (isDurationValid) { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Pass", message: `Duration ${duration.toFixed(1)}s is allowed.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
             else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Fail", message: `Duration ${duration.toFixed(1)}s is not one of the allowed durations.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
         } else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Warn", message: "Could not determine duration." }); }
@@ -233,7 +230,7 @@ function validateVideoOlv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
         const bitrate = metadata.format.bit_rate ? Math.round(metadata.format.bit_rate / 1000) : undefined;
         analysisData.duration = duration;
         analysisData.bitrate = bitrate;
-        analysisData.dimensions = videoStream ? { width: videoStream.width, height: videoStream.height } : undefined;
+        analysisData.dimensions = videoStream ? { width: videoStream.width, height: videoStream.height } : undefined; // Corrected
         analysisData.frameRate = videoStream?.r_frame_rate ? eval(videoStream.r_frame_rate) : undefined;
 
         if (duration !== undefined) {
@@ -287,7 +284,7 @@ function validateVideoCtv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
         const bitrate = metadata.format.bit_rate ? Math.round(metadata.format.bit_rate / 1000) : undefined;
         analysisData.duration = duration;
         analysisData.bitrate = bitrate;
-        analysisData.dimensions = videoStream ? { width: videoStream.width, height: videoStream.height } : undefined;
+        analysisData.dimensions = videoStream ? { width: videoStream.width, height: videoStream.height } : undefined; // Corrected
         analysisData.frameRate = videoStream?.r_frame_rate ? eval(videoStream.r_frame_rate) : undefined;
 
         if (duration !== undefined) {
@@ -319,13 +316,14 @@ function validateVideoCtv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
 
 async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: InvocationContext): Promise<void> { // Make async
     context.log("--- EXECUTING validateHtml5 ---");
-    // const blobSize = analysisData.blobSize; // This is the ZIP size, not uncompressed (Removed as unused here)
     analysisData.html5Info = {}; // Initialize html5 info
+    context.log("validateHtml5: HTML5 Info initialized.");
 
     try {
         const zip = new AdmZip(blob);
         const zipEntries = zip.getEntries();
         analysisData.html5Info.fileCount = zipEntries.length;
+        context.log(`validateHtml5: ZIP file count: ${zipEntries.length}`);
 
         // File Count Check
         const maxFiles = SPEC_LIMITS.html5.maxFileCount;
@@ -340,6 +338,7 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
         if (primaryHtml) {
             analysisData.html5Info.primaryHtmlFile = primaryHtml.entryName;
             analysisData.validationChecks.push({ checkName: "Primary HTML (HTML5)", status: "Pass", message: `Found primary HTML: ${primaryHtml.entryName}`, value: primaryHtml.entryName });
+            context.log(`validateHtml5: Primary HTML found: ${primaryHtml.entryName}`);
 
             // --- Checks within Primary HTML ---
             const htmlContent = zip.readAsText(primaryHtml);
@@ -349,24 +348,23 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
             if (sizeMatch && sizeMatch[1] && sizeMatch[2]) {
                 const adSize = `${sizeMatch[1]}x${sizeMatch[2]}`;
                 analysisData.html5Info.adSizeMeta = adSize;
-                // TODO: Validate this size against supported display dimensions?
                 analysisData.validationChecks.push({ checkName: "Ad Size Meta (HTML5)", status: "Pass", message: `Found ad.size meta tag: ${adSize}`, value: adSize });
             } else {
                 analysisData.validationChecks.push({ checkName: "Ad Size Meta (HTML5)", status: "Fail", message: "Required ad.size meta tag not found or invalid." });
             }
 
             // ClickTag Check (Basic)
-            // This is a very basic check, real validation is more complex
             const clickTagFound = htmlContent.includes('clickTAG') || htmlContent.includes('clickTag');
             analysisData.html5Info.clickTagDetected = clickTagFound;
             if (clickTagFound) {
-                analysisData.validationChecks.push({ checkName: "ClickTag (HTML5)", status: "Pass", message: "clickTAG/clickTag variable usage detected (basic check).", value: "Detected" });
+                analysisData.validationChecks.push({ checkName: "ClickTag (HTML5)", status: "Pass", message: `clickTAG/clickTag variable usage detected (basic check).`, value: "Detected" });
             } else {
                 analysisData.validationChecks.push({ checkName: "ClickTag (HTML5)", status: "Warn", message: "clickTAG/clickTag variable usage not detected (basic check)." });
             }
 
         } else {
             analysisData.validationChecks.push({ checkName: "Primary HTML (HTML5)", status: "Fail", message: "No primary HTML file found in the root of the ZIP." });
+            context.log("validateHtml5: No primary HTML file found.");
         }
 
         // Check for disallowed file types and calculate uncompressed size
@@ -380,7 +378,6 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
                 if (!SPEC_LIMITS.html5.allowedExtensions.includes(entryExt)) {
                     analysisData.validationChecks.push({ checkName: "Allowed Files (HTML5)", status: "Fail", message: `Disallowed file type found: ${entry.entryName}`, value: entry.entryName });
                 }
-                // Identify potential backup image (largest image file)
                 if (['.jpg', '.jpeg', '.png', '.gif'].includes(entryExt)) {
                     if (!backupImageFile || entry.header.size > backupImageFile.size) {
                         backupImageFile = { name: entry.entryName, size: entry.header.size };
@@ -390,19 +387,21 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
         });
         analysisData.html5Info.totalUncompressedSize = totalUncompressedSize;
         analysisData.html5Info.backupImageFile = backupImageFile?.name; // Store original path/name
+        context.log(`validateHtml5: Total uncompressed size: ${totalUncompressedSize}, Backup image: ${backupImageFile?.name}`);
+
 
         // --- Extract and Upload Backup Image ---
         let extractedBackupBlobName: string | undefined;
         if (backupImageFile?.name) {
+            context.log(`validateHtml5: Attempting to extract backup image: ${backupImageFile.name}`);
             try {
                 const backupEntry = zip.getEntry(backupImageFile.name);
                 if (backupEntry) {
                     const backupImageData = backupEntry.getData();
                     const ext = path.extname(backupImageFile.name).toLowerCase();
-                    const contentType = mimeTypes[ext] || 'application/octet-stream'; // Use same mime lookup
-                    extractedBackupBlobName = `${analysisData.blobName}-backup${ext}`; // Create predictable name
+                    const contentType = mimeTypes[ext] || 'application/octet-stream';
+                    extractedBackupBlobName = `${analysisData.blobName}-backup${ext}`;
 
-                    // Need BlobServiceClient to upload
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (connectionString) {
                         const { accountName, accountKey } = getAccountInfo(connectionString);
@@ -417,7 +416,7 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
                         await blockBlobClient.uploadData(backupImageData, {
                             blobHTTPHeaders: { blobContentType: contentType }
                         });
-                        analysisData.html5Info.extractedBackupBlobName = extractedBackupBlobName; // Store the new blob name
+                        analysisData.html5Info.extractedBackupBlobName = extractedBackupBlobName;
                         context.log(`Successfully uploaded extracted backup image.`);
                     } else {
                         context.log("WARN: Storage connection string not found, cannot upload extracted backup image.");
@@ -430,6 +429,8 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
             }
         }
         // --- End Backup Image Extraction ---
+
+        context.log(`validateHtml5: completed ZIP processing. Backup image file: ${backupImageFile?.name}, Extracted blob: ${extractedBackupBlobName}`);
 
 
         // Uncompressed Size Check
@@ -454,11 +455,11 @@ async function validateHtml5(analysisData: AnalysisData, blob: Buffer, context: 
         const msg = `Error processing ZIP file: ${error instanceof Error ? error.message : String(error)}`; context.log(`ERROR: ${msg}`);
         analysisData.validationChecks.push({ checkName: "ZIP Processing", status: "Fail", message: "Could not process ZIP file." });
     }
+    context.log("--- FINISHED validateHtml5 ---");
 }
 
 
 function validateUnknown(analysisData: AnalysisData, context: InvocationContext): void {
-    // ... (keep existing unknown validation logic) ...
     context.log("--- EXECUTING validateUnknown ---");
     const mime = analysisData.mimeType;
     if (analysisData.validationChecks.every(c => c.checkName !== 'File Type')) {
@@ -487,7 +488,6 @@ export async function analyzeCreative(blob: Buffer, context: InvocationContext):
     let tempFilePath: string | undefined;
 
     // --- Retrieve Metadata ---
-    // (Keep existing metadata retrieval logic)
     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
     if (!connectionString) {
         context.log("ERROR: Azure Storage Connection String not found.");
@@ -515,6 +515,7 @@ export async function analyzeCreative(blob: Buffer, context: InvocationContext):
             const msg = `Error initializing table clients: ${error instanceof Error ? error.message : String(error)}`; context.log(`ERROR: ${msg}`);
             analysisData.status = 'Error'; analysisData.validationChecks.push({ checkName: "Configuration", status: "Fail", message: "Error initializing backend storage." });
         }
+        context.log(`Metadata retrieval completed. Status: ${analysisData.status}`);
     }
 
 
@@ -590,21 +591,27 @@ export async function analyzeCreative(blob: Buffer, context: InvocationContext):
         }
 
         // --- Run Category-Specific Validations ---
+        context.log(`Running validations for category: ${category}`);
         switch (category) {
             case 'display':
+                context.log("Calling validateDisplay");
                 validateDisplay(analysisData, blob, context);
                 break;
             case 'audio':
+                context.log("Calling validateAudio");
                 validateAudio(analysisData, mediaMetadata, context);
                 break;
             case 'video_olv':
+                context.log("Calling validateVideoOlv");
                 validateVideoOlv(analysisData, mediaMetadata, context);
                 break;
             case 'video_ctv':
+                context.log("Calling validateVideoCtv");
                 validateVideoCtv(analysisData, mediaMetadata, context);
                 break;
             case 'html5':
-                validateHtml5(analysisData, blob, context); // Call new validation function
+                context.log("Calling validateHtml5");
+                await validateHtml5(analysisData, blob, context);
                 break;
             default:
                 context.warn(`Reached default validation case for category: ${category}. Applying unknown checks.`);
@@ -615,6 +622,7 @@ export async function analyzeCreative(blob: Buffer, context: InvocationContext):
         // Determine overall status based on checks performed
         const hasFailures = analysisData.validationChecks.some(c => c.status === 'Fail');
         analysisData.status = hasFailures ? 'Error' : 'Completed';
+        context.log(`Overall analysis status determined: ${analysisData.status}`);
     }
 
 
@@ -631,13 +639,13 @@ export async function analyzeCreative(blob: Buffer, context: InvocationContext):
                 isCtv: analysisData.isCtv,
                 dimensionsData: analysisData.dimensions ? JSON.stringify(analysisData.dimensions) : undefined,
                 duration: analysisData.duration, bitrate: analysisData.bitrate, frameRate: analysisData.frameRate,
-                // Add html5 info if present (includes extractedBackupBlobName now)
                 html5InfoData: analysisData.html5Info ? JSON.stringify(analysisData.html5Info) : undefined,
             };
             await tableClient.upsertEntity(resultEntity, "Replace");
             context.log(`Successfully stored analysis result for blob: ${blobName}`);
         } catch (error: unknown) {
-             const msg = `Error storing analysis result: ${error instanceof Error ? error.message : String(error)}`; context.log(`ERROR: ${msg}`);
+             const msg = `Error storing analysis result: ${error instanceof Error ? error.message : String(error)}`;
+             context.log(`ERROR storing analysis result for ${blobName}: ${msg}`, error); // Enhanced error logging
         }
     } else {
          context.log(`WARNING: Table client not initialized. Could not store analysis result for ${blobName}.`);

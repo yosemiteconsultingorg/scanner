@@ -1,22 +1,21 @@
 import React, { useState, ChangeEvent } from 'react';
 
 interface FileUploadProps {
-  onFilesSelected: (files: FileList) => void;
+  onFilesSelected: (files: File[]) => void; // Changed from FileList to File[]
 }
 
 const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected }) => {
   const [selectedFileNames, setSelectedFileNames] = useState<string[]>([]);
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      const files = event.target.files;
-      const names = Array.from(files).map(file => file.name);
+    if (event.target.files && event.target.files.length > 0) {
+      const filesArray = Array.from(event.target.files); // Convert FileList to File[]
+      const names = filesArray.map(file => file.name);
       setSelectedFileNames(names);
-      onFilesSelected(files); // Pass the FileList up to the parent
+      onFilesSelected(filesArray); // Pass the File[] up to the parent
     } else {
       setSelectedFileNames([]);
-      // Handle case where files might be null if selection is cancelled
-      // Depending on desired behavior, might need to pass null or empty list up
+      onFilesSelected([]); // Pass empty array if no files or selection cancelled
     }
   };
 
@@ -30,7 +29,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected }) => {
         onChange={handleFileChange}
         style={{ display: 'block', marginTop: '10px' }}
       />
-      {selectedFileNames.length > 0 && (
+      {selectedFileNames.length > 0 ? (
         <div style={{ marginTop: '10px' }}>
           <p>Selected:</p>
           <ul>
@@ -38,6 +37,10 @@ const FileUpload: React.FC<FileUploadProps> = ({ onFilesSelected }) => {
               <li key={index}>{name}</li>
             ))}
           </ul>
+        </div>
+      ) : (
+        <div style={{ marginTop: '10px' }}>
+          <p>No files selected</p>
         </div>
       )}
     </div>
