@@ -8,10 +8,10 @@
 
 # Azure Functions-specific files
 api-vercel
-api/src
+# api/src # Allow api/src for Vercel to build functions
 api/.vscode
 api/.funcignore
-api/host.json
+# api/host.json # Allow host.json for Azure Functions
 
 # Build artifacts
 node_modules
