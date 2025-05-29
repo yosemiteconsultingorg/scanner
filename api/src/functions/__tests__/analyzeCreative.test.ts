@@ -8,69 +8,31 @@ import * as AzureStorageBlob from '@azure/storage-blob'; // Import for jest.mock
 // Mock dependencies
 jest.mock('@azure/storage-blob'); // Auto-mock the entire module
 
-jest.mock('file-type', () => ({
-    fileTypeFromBuffer: jest.fn().mockResolvedValue({ ext: 'jpg', mime: 'image/jpeg' }), 
-}));
-
-jest.mock('ansi-styles', () => ({
-    // Mock properties/functions used by chalk or other dependencies if necessary
-    // For now, a simple object mock might suffice to prevent parsing errors.
-    modifier: {
-        reset: [0, 0],
-        bold: [1, 22],
-        dim: [2, 22],
-        italic: [3, 23],
-        underline: [4, 24],
-        overline: [53, 55],
-        inverse: [7, 27],
-        hidden: [8, 28],
-        strikethrough: [9, 29],
-      },
-      color: {
-        black: [30, 39],
-        red: [31, 39],
-        green: [32, 39],
-        yellow: [33, 39],
-        blue: [34, 39],
-        magenta: [35, 39],
-        cyan: [36, 39],
-        white: [37, 39],
-        gray: [90, 39],
-        // Bright colors
-        // ... (add if needed)
-      },
-      bgColor: {
-        // ... (add if needed)
-      }
-}));
-
-jest.mock('chalk', () => ({
-    // Mock chalk to return a function that returns the input string,
-    // or a more sophisticated mock if specific chalk features are tested.
-    // This basic mock prevents errors when chalk is called.
-    red: (str: string) => str,
-    yellow: (str: string) => str,
-    green: (str: string) => str,
-    blue: (str: string) => str,
-    bold: (str: string) => str,
-    italic: (str: string) => str,
-    // Add other chalk functions if they are used and cause issues
-    default: (str: string) => str, // if chalk is used as chalk(str)
-}));
-
+// file-type, ansi-styles, and chalk are now mocked globally via jest.config.js moduleNameMapper
 
 // Mock the core analysis logic function (performCreativeAnalysis)
 // This mock needs to correctly target the module where performCreativeAnalysis is defined and exported.
-const mockPerformCreativeAnalysis = jest.fn();
+// We will mock performCreativeAnalysis directly.
 jest.mock('../analyzeCreative', () => {
     const originalModule = jest.requireActual('../analyzeCreative');
     return {
         __esModule: true, // Needed for ES modules
         ...originalModule, // Spread original exports
-        performCreativeAnalysis: mockPerformCreativeAnalysis, // Override with mock
-        // analyzeCreativeHttpEventGridHandler will be the actual one from originalModule due to spread
+        // analyzeCreativeHttpEventGridHandler is the actual function we are testing
+        // performCreativeAnalysis is the function we want to mock from this module
+        performCreativeAnalysis: jest.fn(), // This is the mock function
     };
 });
+
+// After jest.mock, when we import performCreativeAnalysis, it will be the mocked version.
+// We need to cast it to JestMockExtended to satisfy TypeScript for toHaveBeenCalledWith etc.
+// However, direct import and casting can be tricky with how Jest handles mocks.
+// A common pattern is to import the module and then access the mocked function.
+// For simplicity, we'll rely on the mock being in place and use a variable to reference it
+// if needed, or directly assert on the imported (mocked) function.
+// Import the module again to get the (potentially mocked) exports.
+import { performCreativeAnalysis as importedMockedPerformCreativeAnalysis } from '../analyzeCreative';
+// We will use importedMockedPerformCreativeAnalysis in tests, which Jest should have replaced with the mock.
 
 
 describe('analyzeCreativeHttpEventGridTrigger', () => {
@@ -81,6 +43,9 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
 
     beforeEach(() => {
         jest.clearAllMocks(); 
+        // It's important to also reset the mock's state if it's defined outside beforeEach
+        (importedMockedPerformCreativeAnalysis as jest.Mock).mockClear(); 
+
         context = { 
             log: jest.fn(), 
             error: jest.fn(),
@@ -107,18 +72,25 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         const mockStream = new Readable();
         mockStream._read = () => {}; 
         mockStream.push(mockBlobData);
-        mockStream.push(null);
+        mockStream.push(null); // This stream is prepared once
 
-        jest.mocked(AzureStorageBlob.BlobServiceClient.fromConnectionString).mockReturnValue({
+        jest.mocked(AzureStorageBlob.BlobServiceClient.fromConnectionString).mockImplementation(() => ({
             getContainerClient: jest.fn().mockReturnValue({
                 getBlobClient: jest.fn().mockReturnValue({
-                    download: jest.fn().mockResolvedValue({
-                        readableStreamBody: mockStream,
-                        blobContentType: 'application/octet-stream',
+                    download: jest.fn().mockImplementation(() => {
+                        // Create a fresh stream for each download call
+                        const freshMockStream = new Readable();
+                        freshMockStream._read = () => {};
+                        freshMockStream.push(Buffer.from('mock blob content')); // Ensure content
+                        freshMockStream.push(null);
+                        return Promise.resolve({
+                            readableStreamBody: freshMockStream,
+                            blobContentType: 'application/octet-stream',
+                        });
                     }),
                 }),
             }),
-        } as unknown as AzureStorageBlob.BlobServiceClient); // Cast to BlobServiceClient
+    } as unknown as AzureStorageBlob.BlobServiceClient));
     });
 
     const createMockEventGridRequest = (events: Record<string, any>[]): HttpRequest => ({
@@ -133,7 +105,36 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         json: jest.fn().mockResolvedValue(events),
     } as unknown as HttpRequest);
 
-    it('should return 200 and process a valid BlobCreated event', async () => {
+    it('should return 200 and process a valid BlobCreated event', async () => { // Removed .only
+        // Ensure a very clean mock for this specific test's download
+        const freshMockStreamForValidEvent = new Readable();
+        freshMockStreamForValidEvent._read = () => {};
+        freshMockStreamForValidEvent.push(Buffer.from('valid event mock content'));
+        freshMockStreamForValidEvent.push(null);
+
+        const downloadMockForValidEvent = jest.fn().mockImplementation(() => {
+            console.log('[TEST_DEBUG] downloadMockForValidEvent CALLED'); // Use console.log for direct visibility
+            const stream = new Readable();
+            stream._read = () => {};
+            stream.push(Buffer.from('specific mock content for valid event test'));
+            stream.push(null);
+            const mockResolvedValue = {
+                readableStreamBody: stream,
+                blobContentType: 'application/octet-stream',
+            };
+            console.log('[TEST_DEBUG] downloadMockForValidEvent RETURNING:', !!mockResolvedValue.readableStreamBody);
+            return Promise.resolve(mockResolvedValue);
+        });
+
+        jest.mocked(AzureStorageBlob.BlobServiceClient.fromConnectionString).mockImplementation(() => ({
+            getContainerClient: jest.fn().mockReturnValue({
+                getBlobClient: jest.fn().mockReturnValue({
+                    download: downloadMockForValidEvent, // Use the specific, logging mock
+                }),
+            }),
+        } as unknown as AzureStorageBlob.BlobServiceClient));
+
+
         const mockEvent = {
             eventType: 'Microsoft.Storage.BlobCreated',
             data: { url: 'https://testaccount.blob.core.windows.net/files-processing/test-file.jpg' },
@@ -143,10 +144,14 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
 
         const response = await handler(request, context);
 
+        // --- DEBUGGING: Inspect all calls to context.log ---
+        // console.log('DEBUG: context.log calls:', (context.log as jest.Mock).mock.calls);
+        // --- END DEBUGGING ---
+
         expect(response.status).toBe(200);
         expect(context.log).toHaveBeenCalledWith(expect.stringContaining('Processing BlobCreated event for URL: https://testaccount.blob.core.windows.net/files-processing/test-file.jpg'));
-        expect(mockPerformCreativeAnalysis).toHaveBeenCalledTimes(1);
-        expect(mockPerformCreativeAnalysis).toHaveBeenCalledWith(
+        expect(importedMockedPerformCreativeAnalysis).toHaveBeenCalledTimes(1);
+        expect(importedMockedPerformCreativeAnalysis).toHaveBeenCalledWith(
             expect.any(Buffer), 
             context,
             'test-file.jpg' 
@@ -165,7 +170,7 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
 
         expect(response.status).toBe(200);
         expect(context.log).toHaveBeenCalledWith(expect.stringContaining("Received event of type Microsoft.Storage.BlobDeleted, not 'Microsoft.Storage.BlobCreated'. Skipping."));
-        expect(mockPerformCreativeAnalysis).not.toHaveBeenCalled();
+        expect(importedMockedPerformCreativeAnalysis).not.toHaveBeenCalled();
     });
     
     it('should handle empty event array gracefully', async () => {
@@ -173,7 +178,7 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         const response = await handler(request, context);
         expect(response.status).toBe(200);
         expect(context.log).toHaveBeenCalledWith(expect.stringContaining("Received 0 Event Grid event(s)"));
-        expect(mockPerformCreativeAnalysis).not.toHaveBeenCalled();
+        expect(importedMockedPerformCreativeAnalysis).not.toHaveBeenCalled();
     });
 
     it('should log error and skip event if blob URL is malformed', async () => {
@@ -184,8 +189,11 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         };
         request = createMockEventGridRequest([mockEvent]);
         await handler(request, context); 
-        expect(context.error).toHaveBeenCalledWith(expect.stringContaining('Invalid URL'), expect.any(TypeError)); 
-        expect(mockPerformCreativeAnalysis).not.toHaveBeenCalled();
+        expect(context.error).toHaveBeenCalledWith(
+            expect.stringContaining("Error processing event for blob this-is-not-a-valid-url: TypeError: Invalid URL"), // Reverted
+            expect.any(TypeError)
+        ); 
+        expect(importedMockedPerformCreativeAnalysis).not.toHaveBeenCalled();
     });
     
     it('should log error and skip if connection string is missing', async () => {
@@ -197,8 +205,8 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         };
         request = createMockEventGridRequest([mockEvent]);
         await handler(request, context);
-        expect(context.error).toHaveBeenCalledWith("Azure Storage Connection String not found in environment variables. Cannot download blob.");
-        expect(mockPerformCreativeAnalysis).not.toHaveBeenCalled();
+        expect(context.error).toHaveBeenCalledWith("Azure Storage Connection String not found."); // Reverted
+        expect(importedMockedPerformCreativeAnalysis).not.toHaveBeenCalled();
     });
 
     it('should log error if blob download fails (readableStreamBody is null)', async () => {
@@ -226,8 +234,8 @@ describe('analyzeCreativeHttpEventGridTrigger', () => {
         };
         request = createMockEventGridRequest([mockEvent]);
         await handler(request, context);
-        expect(context.error).toHaveBeenCalledWith('Failed to get readable stream for blob: download-fail.jpg');
-        expect(mockPerformCreativeAnalysis).not.toHaveBeenCalled();
+        expect(context.error).toHaveBeenCalledWith('Failed to get readable stream for blob: download-fail.jpg'); // Reverted
+        expect(importedMockedPerformCreativeAnalysis).not.toHaveBeenCalled();
     });
 });
 

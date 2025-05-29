@@ -620,72 +620,75 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
 }
 
 // Helper to convert stream to buffer
-async function streamToBuffer(readableStream: NodeJS.ReadableStream): Promise<Buffer> { // Changed Readable to NodeJS.ReadableStream
+async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: InvocationContext): Promise<Buffer> {
+    const logger = context && typeof context.log === 'function' ? context.log : console.log;
+
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
+        logger('[STREAM_DEBUG] streamToBuffer: Attaching listeners.'); 
         readableStream.on('data', (data: Buffer | string) => {
+            logger('[STREAM_DEBUG] streamToBuffer: data event received.'); 
             chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
         });
         readableStream.on('end', () => {
+            logger('[STREAM_DEBUG] streamToBuffer: end event received.'); 
             resolve(Buffer.concat(chunks));
         });
-        readableStream.on('error', reject);
+        readableStream.on('error', (err) => {
+            logger(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); 
+            reject(err);
+        });
     });
 }
 
 // New HTTP Trigger for Event Grid Events
 export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
-    const eventGridEvents = await request.json() as EventGridEvent<StorageBlobCreatedEventData>[]; // Cast to expected type
+    const eventGridEvents = await request.json() as EventGridEvent<StorageBlobCreatedEventData>[]; 
     context.log(`Received ${eventGridEvents.length} Event Grid event(s).`);
 
         for (const event of eventGridEvents) {
             if (event.eventType === 'Microsoft.Storage.BlobCreated') {
                 const blobUrl = event.data.url;
-                context.log(`Processing BlobCreated event for URL: ${blobUrl}`);
+                context.log(`Processing BlobCreated event for URL: ${blobUrl}`); 
 
-                try {
+                try { 
+                    context.log('[HANDLER_ENTRY_TRY_BLOCK] Entered try block for event processing.');
                     const url = new URL(blobUrl);
                     const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
                     
                     if (pathSegments.length < 2) {
-                        context.error(`Could not parse container and blob name from URL: ${blobUrl}`);
+                        context.error(`Could not parse container and blob name from URL: ${blobUrl}`); 
                         continue;
                     }
                     const containerNameFromUrl = pathSegments[0];
                     const blobNameFromUrl = pathSegments.slice(1).join('/');
                     
-                    context.log(`Parsed Container: ${containerNameFromUrl}, Blob: ${blobNameFromUrl}`);
-
-                    // Ensure we only process blobs from the target container if necessary,
-                    // though Event Grid subscription filters are better for this.
-                    // if (containerNameFromUrl !== targetContainerName) {
-                    //    context.log(`Skipping blob from container ${containerNameFromUrl}, expected ${targetContainerName}`);
-                    //    continue;
-                    // }
-
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (!connectionString) {
-                        context.error("Azure Storage Connection String not found in environment variables. Cannot download blob.");
+                        context.error("Azure Storage Connection String not found."); 
                         continue; 
                     }
 
                     const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
                     const containerClient = blobServiceClient.getContainerClient(containerNameFromUrl);
                     const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl);
+                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for ${blobNameFromUrl}`);
 
                     const downloadResponse = await specificBlobClient.download();
+                    context.log(`[HANDLER_TRACE] downloadResponse object:`, downloadResponse); 
+                    context.log(`[HANDLER_TRACE] After specificBlobClient.download(). Response has readableStreamBody: ${!!downloadResponse.readableStreamBody}`);
+                    
                     if (!downloadResponse.readableStreamBody) {
                         context.error(`Failed to get readable stream for blob: ${blobNameFromUrl}`);
                         continue;
                     }
-                    const blobContent = await streamToBuffer(downloadResponse.readableStreamBody);
+                    const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
                     context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
 
-                    // Call the refactored analysis logic
                     await performCreativeAnalysis(blobContent, context, blobNameFromUrl);
 
-                } catch (err) {
-                    context.error(`Error processing event for blob ${blobUrl}: ${err instanceof Error ? err.message : String(err)}`, err);
+                } catch (innerErr) { 
+                    context.error(`Error processing event for blob ${blobUrl}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
                 }
             } else {
                 context.log(`Received event of type ${event.eventType}, not 'Microsoft.Storage.BlobCreated'. Skipping.`);
@@ -696,7 +699,7 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 
 app.http('analyzeCreativeHttpEventGridTrigger', {
     methods: ['POST'],
-    authLevel: 'function', // Or 'anonymous' if Event Grid subscription handles auth via managed identity/system key
+    authLevel: 'function', 
     handler: analyzeCreativeHttpEventGridHandler
 });
 
