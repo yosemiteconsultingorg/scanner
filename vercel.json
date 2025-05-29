@@ -7,7 +7,7 @@
     { "source": "/api/:path*", "destination": "/api/:path*" }
   ],
   "functions": {
-    "api/dist/src/functions/**/*.js": {
+    "api/src/functions/**/*.ts": {
       "memory": 1024,
       "maxDuration": 10
     }
