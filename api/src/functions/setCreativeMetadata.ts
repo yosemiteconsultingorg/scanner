@@ -39,6 +39,14 @@ export async function setCreativeMetadata(request: HttpRequest, context: Invocat
 
     const { blobName, isCtv } = body;
 
+    // Extract UUID part from blobName (e.g., "uuid.ext" -> "uuid")
+    const uuidPart = blobName.includes('.') ? blobName.substring(0, blobName.lastIndexOf('.')) : blobName;
+    if (!uuidPart) {
+        context.error(`Could not extract UUID from blobName: ${blobName}`);
+        return { status: 400, body: "Invalid blobName format." };
+    }
+    context.log(`Using UUID part as RowKey: ${uuidPart} (from original blobName: ${blobName})`);
+
     const connectionString = process.env.AzureWebJobsStorage_ConnectionString; // Using the same storage account for tables
     if (!connectionString) {
         context.error("Azure Storage Connection String not found in environment variables.");
@@ -56,18 +64,19 @@ export async function setCreativeMetadata(request: HttpRequest, context: Invocat
 
         const entity = {
             partitionKey: partitionKey,
-            rowKey: blobName, // Use blobName as the unique identifier within the partition
-            isCtv: isCtv
+            rowKey: uuidPart, // Use extracted UUID part as the RowKey
+            isCtv: isCtv,
+            originalFullBlobName: blobName // Store the original full blobName for reference if needed
         };
 
         // Upsert the entity (creates or updates if exists)
         await tableClient.upsertEntity(entity, "Merge"); // Merge strategy updates existing entity
 
-        context.log(`Successfully stored metadata for blob: ${blobName}, isCtv: ${isCtv}`);
-        return { status: 200, body: `Metadata stored for ${blobName}` };
+        context.log(`Successfully stored metadata for RowKey (UUID): ${uuidPart}, isCtv: ${isCtv}, originalBlobName: ${blobName}`);
+        return { status: 200, body: `Metadata stored for ${uuidPart}` };
 
     } catch (error) {
-        context.error(`Error storing metadata for ${blobName}:`, error);
+        context.error(`Error storing metadata for RowKey (UUID) ${uuidPart} (original blobName ${blobName}):`, error);
         return { status: 500, body: `Server error: ${error.message}` };
     }
 }

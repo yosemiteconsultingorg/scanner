@@ -684,8 +684,12 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                         continue;
                     }
                     const containerNameFromUrl = pathSegments[0];
-                    const blobNameFromUrl = pathSegments.slice(1).join('/');
+                    let blobNameFromUrl = pathSegments.slice(1).join('/'); // Keep original for logging
                     
+                    context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`);
+                    const diagnosticTestBlobName = "testsimple.jpg"; // Hardcoded for testing
+                    context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`);
+
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (!connectionString) {
                         context.error("Azure Storage Connection String not found."); 
@@ -694,51 +698,55 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 
                     const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
                     const containerClient = blobServiceClient.getContainerClient(containerNameFromUrl);
-                    const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl);
-                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for ${blobNameFromUrl}`);
+                    // Use diagnosticTestBlobName for the actual download attempt
+                    const specificBlobClient = containerClient.getBlobClient(diagnosticTestBlobName); 
+                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for DIAGNOSTIC BLOB: ${diagnosticTestBlobName}`);
 
                     let downloadResponse;
-                    const maxRetries = 5; // Increased from 3
-                    const retryDelayMs = 6000; // Increased from 5000ms (6 seconds)
+                    const maxRetries = 5; 
+                    const retryDelayMs = 6000; 
                     let attempt = 0;
                     let blobDownloaded = false;
 
                     while (attempt < maxRetries && !blobDownloaded) {
                         attempt++;
                         try {
-                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${blobNameFromUrl}`);
+                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download DIAGNOSTIC BLOB: ${diagnosticTestBlobName}`);
                             downloadResponse = await specificBlobClient.download();
-                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt}):`, downloadResponse); 
-                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt}). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
+                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt} for DIAGNOSTIC BLOB):`, downloadResponse); 
+                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt} for DIAGNOSTIC BLOB). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
                             if (downloadResponse?.readableStreamBody) {
                                 blobDownloaded = true;
                             } else {
-                                // This case should ideally not happen if download() resolves without error but no stream
-                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${blobNameFromUrl} resolved but no readableStreamBody.`);
-                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries.");
+                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for DIAGNOSTIC BLOB ${diagnosticTestBlobName} resolved but no readableStreamBody.`);
+                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries for diagnostic blob.");
                             }
                         } catch (downloadError) {
                             if (downloadError instanceof RestError && downloadError.statusCode === 404 && attempt < maxRetries) {
-                                context.warn(`[HANDLER_TRACE] Blob ${blobNameFromUrl} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
+                                context.warn(`[HANDLER_TRACE] DIAGNOSTIC BLOB ${diagnosticTestBlobName} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
                                 await delay(retryDelayMs);
                             } else {
-                                throw downloadError; // Re-throw if not a 404 or max retries reached
+                                context.error(`[HANDLER_TRACE] Error downloading DIAGNOSTIC BLOB ${diagnosticTestBlobName} on attempt ${attempt}:`, downloadError);
+                                throw downloadError; 
                             }
                         }
                     }
 
                     if (!blobDownloaded || !downloadResponse?.readableStreamBody) {
-                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl} after ${maxRetries} attempts.`);
-                        continue;
+                        context.error(`Failed to get readable stream for DIAGNOSTIC BLOB: ${diagnosticTestBlobName} after ${maxRetries} attempts.`);
+                        continue; 
                     }
                     
                     const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
-                    context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
+                    context.log(`Successfully downloaded DIAGNOSTIC BLOB: ${diagnosticTestBlobName}, size: ${blobContent.length} bytes`);
 
-                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl);
+                    // For this diagnostic, we'll call performCreativeAnalysis with the ORIGINAL blobNameFromUrl from the event,
+                    // but the content will be from testsimple.jpg. This is just to see if processing proceeds.
+                    context.log(`[DIAGNOSTIC_INFO] Calling performCreativeAnalysis with original blob name: ${blobNameFromUrl} but content from ${diagnosticTestBlobName}`);
+                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl); // Use original blobNameFromUrl for metadata/table storage consistency
 
                 } catch (innerErr) { 
-                    context.error(`Error processing event for blob ${blobUrl}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
+                    context.error(`Error processing event for original blob URL ${blobUrl} (diagnostic attempted ${diagnosticTestBlobName}): ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
                 }
             } else {
                 context.log(`Received event of type ${event.eventType}, not 'Microsoft.Storage.BlobCreated'. Skipping.`);
