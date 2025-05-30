@@ -446,19 +446,25 @@ function validateUnknown(analysisData: AnalysisData, context: InvocationContext)
 // Renamed from analyzeCreative to performCreativeAnalysis
 // Added blobNameFromEvent parameter
 export async function performCreativeAnalysis(blobContent: Buffer, context: InvocationContext, blobNameFromEvent: string): Promise<void> { // Added export
-    // Use blobNameFromEvent instead of context.triggerMetadata.name
+    // Use blobNameFromEvent (e.g., UUID-OriginalFilename.ext)
+    // Extract the UUID part for table storage RowKey consistency.
+    // The full blobNameFromEvent is the actual name in blob storage.
+    const uuidPart = blobNameFromEvent.split('-')[0];
     const originalFileName = blobNameFromEvent.includes('-') ? blobNameFromEvent.substring(blobNameFromEvent.indexOf('-') + 1) : blobNameFromEvent;
 
-    if (blobNameFromEvent === 'unknown-blob' || !blobNameFromEvent) { // Added check for empty blobNameFromEvent
-        context.log("ERROR: Blob name invalid or not provided from event.");
+    if (!uuidPart || blobNameFromEvent === 'unknown-blob' || !blobNameFromEvent) { 
+        context.log(`ERROR: Could not derive UUID or blob name invalid. UUID Part: '${uuidPart}', Full Name: '${blobNameFromEvent}'`);
         return;
     }
+    context.log(`Derived UUID for Table Storage RowKey: ${uuidPart} (from full blob name: ${blobNameFromEvent})`);
 
     const blobSize = blobContent.length;
-    context.log(`Processing blob "${blobNameFromEvent}" (${originalFileName}), Size: ${blobSize} bytes`);
+    context.log(`Processing blob "${blobNameFromEvent}" (parsed original: "${originalFileName}"), Size: ${blobSize} bytes`);
 
     const analysisData: AnalysisData = {
-        blobName: blobNameFromEvent, originalFileName: originalFileName, blobSize: blobSize,
+        blobName: blobNameFromEvent, // Store the full, actual blob name
+        originalFileName: originalFileName, 
+        blobSize: blobSize,
         isCtv: false, validationChecks: [], status: 'Processing',
     };
     let tableClient: TableClient | undefined;
@@ -478,20 +484,28 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
             tableClient = new TableClient(tableServiceUrl, resultsTableName, credential);
             await tableClient.createTable(); // Ensure table exists
 
-            context.log(`Attempting to retrieve metadata for blob: ${blobNameFromEvent}`);
+            context.log(`Attempting to retrieve metadata using RowKey (UUID): ${uuidPart}`);
             try {
-                const entity = await metadataTableClient.getEntity<{ isCtv: boolean }>(partitionKey, blobNameFromEvent);
-                if (entity && typeof entity.isCtv === 'boolean') {
-                    analysisData.isCtv = entity.isCtv;
-                    context.log(`Retrieved metadata: isCtv = ${analysisData.isCtv}`);
+                // Fetch metadata using the UUID part as RowKey
+                const entity = await metadataTableClient.getEntity<{ isCtv: boolean, originalFullBlobName?: string }>(partitionKey, uuidPart);
+                if (entity) {
+                    if (typeof entity.isCtv === 'boolean') {
+                        analysisData.isCtv = entity.isCtv;
+                        context.log(`Retrieved metadata for UUID ${uuidPart}: isCtv = ${analysisData.isCtv}`);
+                    } else {
+                        context.warn(`Metadata 'isCtv' invalid for UUID ${uuidPart}. Assuming isCtv = false.`);
+                    }
+                    // If originalFullBlobName was stored by setCreativeMetadata, we could use it here,
+                    // but originalFileName is already parsed from blobNameFromEvent.
+                    // analysisData.originalFileName = entity.originalFullBlobName || originalFileName; 
                 } else {
-                    context.warn(`Metadata invalid for ${blobNameFromEvent}. Assuming isCtv = false.`);
+                    context.warn(`Metadata entity not found for RowKey (UUID) ${uuidPart}. Assuming isCtv = false.`);
                 }
             } catch (error: unknown) {
                  if (error instanceof RestError && error.statusCode === 404) {
-                    context.warn(`Metadata entity not found for ${blobNameFromEvent}. Assuming isCtv = false.`);
+                    context.warn(`Metadata entity not found for RowKey (UUID) ${uuidPart}. Assuming isCtv = false.`);
                  } else {
-                    const msg = `Error retrieving metadata: ${error instanceof Error ? error.message : String(error)}`;
+                    const msg = `Error retrieving metadata for RowKey (UUID) ${uuidPart}: ${error instanceof Error ? error.message : String(error)}`;
                     context.log(`ERROR: ${msg}`);
                  }
             }
@@ -592,7 +606,8 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
     if (tableClient) {
         try {
             const resultEntity = {
-                partitionKey: partitionKey, rowKey: blobNameFromEvent,
+                partitionKey: partitionKey, rowKey: uuidPart, // Use UUID part as RowKey for results
+                fullBlobName: blobNameFromEvent, // Store the full blob name for reference
                 status: analysisData.status,
                 validationChecksData: JSON.stringify(analysisData.validationChecks),
                 originalFileName: analysisData.originalFileName, blobSize: analysisData.blobSize,
@@ -603,13 +618,13 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
                 html5InfoData: analysisData.html5Info ? JSON.stringify(analysisData.html5Info) : undefined,
             };
             await tableClient.upsertEntity(resultEntity, "Replace");
-            context.log(`Successfully stored analysis result for blob: ${blobNameFromEvent}`);
+            context.log(`Successfully stored analysis result for RowKey (UUID): ${uuidPart} (full blob name: ${blobNameFromEvent})`);
         } catch (error: unknown) {
-             const msg = `Error storing analysis result: ${error instanceof Error ? error.message : String(error)}`;
-             context.log(`ERROR storing analysis result for ${blobNameFromEvent}: ${msg}`, error);
+             const msg = `Error storing analysis result for RowKey (UUID) ${uuidPart}: ${error instanceof Error ? error.message : String(error)}`;
+             context.log(`ERROR storing analysis result for ${uuidPart}: ${msg}`, error);
         }
     } else {
-         context.log(`WARNING: Table client not initialized. Could not store analysis result for ${blobNameFromEvent}.`);
+         context.log(`WARNING: Table client not initialized. Could not store analysis result for RowKey (UUID) ${uuidPart}.`);
     }
 
     if (tempFilePath) {
@@ -624,21 +639,28 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
 
 // Helper to convert stream to buffer
 async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: InvocationContext): Promise<Buffer> {
-    const logger = context && typeof context.log === 'function' ? context.log : console.log;
+    // Correctly use context.log or console.log
+    const log = (message: string, ...optionalParams: any[]) => {
+        if (context && typeof context.log === 'function') {
+            context.log(message, ...optionalParams);
+        } else {
+            console.log(message, ...optionalParams);
+        }
+    };
 
     return new Promise((resolve, reject) => {
         const chunks: Buffer[] = [];
-        logger('[STREAM_DEBUG] streamToBuffer: Attaching listeners.'); 
+        log('[STREAM_DEBUG] streamToBuffer: Attaching listeners.'); 
         readableStream.on('data', (data: Buffer | string) => {
-            logger('[STREAM_DEBUG] streamToBuffer: data event received.'); 
+            log('[STREAM_DEBUG] streamToBuffer: data event received.'); 
             chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data));
         });
         readableStream.on('end', () => {
-            logger('[STREAM_DEBUG] streamToBuffer: end event received.'); 
+            log('[STREAM_DEBUG] streamToBuffer: end event received.'); 
             resolve(Buffer.concat(chunks));
         });
         readableStream.on('error', (err) => {
-            logger(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); 
+            log(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); 
             reject(err);
         });
     });
@@ -685,11 +707,11 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                         continue;
                     }
                     const containerNameFromUrl = pathSegments[0];
-                    let blobNameFromUrl = pathSegments.slice(1).join('/'); // Keep original for logging
+                    let blobNameFromUrl = pathSegments.slice(1).join('/'); 
                     
-                    context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`);
-                    // diagnosticTestBlobName is already defined above
-                    context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`);
+                    // context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`); // Reverted diagnostic
+                    // const diagnosticTestBlobName = "testsimple.jpg"; // Reverted diagnostic
+                    // context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`); // Reverted diagnostic
 
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (!connectionString) {
@@ -699,9 +721,8 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 
                     const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
                     const containerClient = blobServiceClient.getContainerClient(containerNameFromUrl);
-                    // Use diagnosticTestBlobName for the actual download attempt
-                    const specificBlobClient = containerClient.getBlobClient(diagnosticTestBlobName); 
-                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for DIAGNOSTIC BLOB: ${diagnosticTestBlobName}`);
+                    const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl); // Use actual blobNameFromUrl
+                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for: ${blobNameFromUrl}`);
 
                     let downloadResponse;
                     const maxRetries = 5; 
@@ -712,42 +733,39 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     while (attempt < maxRetries && !blobDownloaded) {
                         attempt++;
                         try {
-                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download DIAGNOSTIC BLOB: ${diagnosticTestBlobName}`);
+                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${blobNameFromUrl}`);
                             downloadResponse = await specificBlobClient.download();
-                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt} for DIAGNOSTIC BLOB):`, downloadResponse); 
-                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt} for DIAGNOSTIC BLOB). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
+                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt}):`, downloadResponse); 
+                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt}). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
                             if (downloadResponse?.readableStreamBody) {
                                 blobDownloaded = true;
                             } else {
-                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for DIAGNOSTIC BLOB ${diagnosticTestBlobName} resolved but no readableStreamBody.`);
-                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries for diagnostic blob.");
+                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${blobNameFromUrl} resolved but no readableStreamBody.`);
+                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries.");
                             }
                         } catch (downloadError) {
                             if (downloadError instanceof RestError && downloadError.statusCode === 404 && attempt < maxRetries) {
-                                context.warn(`[HANDLER_TRACE] DIAGNOSTIC BLOB ${diagnosticTestBlobName} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
+                                context.warn(`[HANDLER_TRACE] Blob ${blobNameFromUrl} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
                                 await delay(retryDelayMs);
                             } else {
-                                context.error(`[HANDLER_TRACE] Error downloading DIAGNOSTIC BLOB ${diagnosticTestBlobName} on attempt ${attempt}:`, downloadError);
+                                // context.error(`[HANDLER_TRACE] Error downloading blob ${blobNameFromUrl} on attempt ${attempt}:`, downloadError); // Already logged in outer catch
                                 throw downloadError; 
                             }
                         }
                     }
 
                     if (!blobDownloaded || !downloadResponse?.readableStreamBody) {
-                        context.error(`Failed to get readable stream for DIAGNOSTIC BLOB: ${diagnosticTestBlobName} after ${maxRetries} attempts.`);
+                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl} after ${maxRetries} attempts.`);
                         continue; 
                     }
                     
                     const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
-                    context.log(`Successfully downloaded DIAGNOSTIC BLOB: ${diagnosticTestBlobName}, size: ${blobContent.length} bytes`);
+                    context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
 
-                    // For this diagnostic, we'll call performCreativeAnalysis with the ORIGINAL blobNameFromUrl from the event,
-                    // but the content will be from testsimple.jpg. This is just to see if processing proceeds.
-                    context.log(`[DIAGNOSTIC_INFO] Calling performCreativeAnalysis with original blob name: ${blobNameFromUrl} but content from ${diagnosticTestBlobName}`);
-                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl); // Use original blobNameFromUrl for metadata/table storage consistency
+                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl);
 
                 } catch (innerErr) { 
-                    context.error(`Error processing event for original blob URL ${blobUrl} (diagnostic attempted ${diagnosticTestBlobName}): ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
+                    context.error(`Error processing event for blob URL ${blobUrl}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
                 }
             } else {
                 context.log(`Received event of type ${event.eventType}, not 'Microsoft.Storage.BlobCreated'. Skipping.`);
