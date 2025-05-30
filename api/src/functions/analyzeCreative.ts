@@ -698,8 +698,8 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for ${blobNameFromUrl}`);
 
                     let downloadResponse;
-                    const maxRetries = 3;
-                    const retryDelayMs = 5000; // 5 seconds
+                    const maxRetries = 5; // Increased from 3
+                    const retryDelayMs = 6000; // Increased from 5000ms (6 seconds)
                     let attempt = 0;
                     let blobDownloaded = false;
 
