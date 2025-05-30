@@ -10,6 +10,9 @@ import * as path from 'path';
 import AdmZip from 'adm-zip';
 // import { Readable } from 'stream'; // No longer directly used
 
+// Helper function for retries
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 // --- Event Grid Event Interfaces ---
 interface EventGridEvent<TData = Record<string, unknown>> { // Changed any to unknown
     id: string;
@@ -694,14 +697,41 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl);
                     context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for ${blobNameFromUrl}`);
 
-                    const downloadResponse = await specificBlobClient.download();
-                    context.log(`[HANDLER_TRACE] downloadResponse object:`, downloadResponse); 
-                    context.log(`[HANDLER_TRACE] After specificBlobClient.download(). Response has readableStreamBody: ${!!downloadResponse.readableStreamBody}`);
-                    
-                    if (!downloadResponse.readableStreamBody) {
-                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl}`);
+                    let downloadResponse;
+                    const maxRetries = 3;
+                    const retryDelayMs = 5000; // 5 seconds
+                    let attempt = 0;
+                    let blobDownloaded = false;
+
+                    while (attempt < maxRetries && !blobDownloaded) {
+                        attempt++;
+                        try {
+                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${blobNameFromUrl}`);
+                            downloadResponse = await specificBlobClient.download();
+                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt}):`, downloadResponse); 
+                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt}). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
+                            if (downloadResponse?.readableStreamBody) {
+                                blobDownloaded = true;
+                            } else {
+                                // This case should ideally not happen if download() resolves without error but no stream
+                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${blobNameFromUrl} resolved but no readableStreamBody.`);
+                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries.");
+                            }
+                        } catch (downloadError) {
+                            if (downloadError instanceof RestError && downloadError.statusCode === 404 && attempt < maxRetries) {
+                                context.warn(`[HANDLER_TRACE] Blob ${blobNameFromUrl} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
+                                await delay(retryDelayMs);
+                            } else {
+                                throw downloadError; // Re-throw if not a 404 or max retries reached
+                            }
+                        }
+                    }
+
+                    if (!blobDownloaded || !downloadResponse?.readableStreamBody) {
+                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl} after ${maxRetries} attempts.`);
                         continue;
                     }
+                    
                     const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
                     context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
 
