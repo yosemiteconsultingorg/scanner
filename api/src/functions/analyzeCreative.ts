@@ -674,6 +674,7 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                 const blobUrl = event.data.url;
                 context.log(`Processing BlobCreated event for URL: ${blobUrl}`); 
 
+                let diagnosticTestBlobName = "testsimple.jpg"; // Define at a scope accessible by catch
                 try { 
                     context.log('[HANDLER_ENTRY_TRY_BLOCK] Entered try block for event processing.');
                     const url = new URL(blobUrl);
@@ -687,7 +688,7 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     let blobNameFromUrl = pathSegments.slice(1).join('/'); // Keep original for logging
                     
                     context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`);
-                    const diagnosticTestBlobName = "testsimple.jpg"; // Hardcoded for testing
+                    // diagnosticTestBlobName is already defined above
                     context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`);
 
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
