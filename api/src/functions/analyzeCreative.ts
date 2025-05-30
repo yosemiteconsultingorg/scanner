@@ -643,8 +643,28 @@ async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: I
 
 // New HTTP Trigger for Event Grid Events
 export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
-    const eventGridEvents = await request.json() as EventGridEvent<StorageBlobCreatedEventData>[]; 
-    context.log(`Received ${eventGridEvents.length} Event Grid event(s).`);
+    const requestData = await request.json(); 
+    
+    // Handle Event Grid Subscription Validation Handshake
+    if (Array.isArray(requestData) && requestData.length > 0 && requestData[0].eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+        const validationEvent = requestData[0];
+        if (validationEvent.data && validationEvent.data.validationCode) {
+            const validationCode = validationEvent.data.validationCode;
+            context.log(`Responding to Event Grid validation handshake with code: ${validationCode}`);
+            return {
+                status: 200,
+                jsonBody: {
+                    validationResponse: validationCode
+                }
+            };
+        } else {
+            context.error("SubscriptionValidationEvent received, but validationCode is missing in data.");
+            return { status: 400, body: "Validation event received, but validationCode missing." };
+        }
+    }
+
+    const eventGridEvents = requestData as EventGridEvent<StorageBlobCreatedEventData>[];
+    context.log(`Received ${eventGridEvents.length} Event Grid event(s) for processing.`);
 
         for (const event of eventGridEvents) {
             if (event.eventType === 'Microsoft.Storage.BlobCreated') {
