@@ -668,70 +668,111 @@ async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: I
 
 // New HTTP Trigger for Event Grid Events
 export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
-    context.log(`analyzeCreativeHttpEventGridHandler invoked.`); 
+    const requestData = await request.json(); 
     
-    try {
-        const requestData = await request.json();
-        // It's good practice to log the raw request for debugging Event Grid issues
-        context.log("Raw request data from Event Grid:", JSON.stringify(requestData, null, 2));
-
-        // Handle Event Grid Subscription Validation Handshake FIRST
-        // Event Grid sends an array of events, even for validation.
-        if (Array.isArray(requestData) && requestData.length > 0 && requestData[0].data && requestData[0].eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
-            const validationEvent = requestData[0]; // data is on the event object itself for validation
+    // Handle Event Grid Subscription Validation Handshake
+    if (Array.isArray(requestData) && requestData.length > 0 && requestData[0].eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+        const validationEvent = requestData[0];
+        if (validationEvent.data && validationEvent.data.validationCode) {
             const validationCode = validationEvent.data.validationCode;
-            if (validationCode) {
-                context.log(`Responding to Event Grid validation handshake with code: ${validationCode}`);
-                return { // IMPORTANT: Return immediately for validation
-                    status: 200,
-                    jsonBody: {
-                        validationResponse: validationCode
-                    }
-                };
-            } else {
-                context.error("SubscriptionValidationEvent received, but validationCode is missing in data.");
-                return { status: 400, body: "Validation event received, but validationCode missing." };
-            }
-        }
-
-        // If it's not a validation event, proceed with simplified logging for other events
-        // Event Grid can send a single event or an array of events.
-        const eventsToProcess = Array.isArray(requestData) ? requestData : [requestData];
-
-        for (const event of eventsToProcess) {
-            // Ensure event and event.eventType are defined before accessing
-            if (event && event.eventType) {
-                context.log(`Processing event type: ${event.eventType}`);
-                if (event.eventType === 'Microsoft.Storage.BlobCreated') {
-                    // Log specific data for BlobCreated events
-                    if (event.data) {
-                        context.log(`BlobCreated event data:`, JSON.stringify(event.data, null, 2));
-                    } else {
-                        context.warn("BlobCreated event received without data field.");
-                    }
+            context.log(`Responding to Event Grid validation handshake with code: ${validationCode}`);
+            return {
+                status: 200,
+                jsonBody: {
+                    validationResponse: validationCode
                 }
-                // Add handling for other event types if necessary
+            };
+        } else {
+            context.error("SubscriptionValidationEvent received, but validationCode is missing in data.");
+            return { status: 400, body: "Validation event received, but validationCode missing." };
+        }
+    }
+
+    const eventGridEvents = requestData as EventGridEvent<StorageBlobCreatedEventData>[];
+    context.log(`Received ${eventGridEvents.length} Event Grid event(s) for processing.`);
+
+        for (const event of eventGridEvents) {
+            if (event.eventType === 'Microsoft.Storage.BlobCreated') {
+                const blobUrl = event.data.url;
+                context.log(`Processing BlobCreated event for URL: ${blobUrl}`); 
+
+                let diagnosticTestBlobName = "testsimple.jpg"; // Define at a scope accessible by catch
+                try { 
+                    context.log('[HANDLER_ENTRY_TRY_BLOCK] Entered try block for event processing.');
+                    const url = new URL(blobUrl);
+                    const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
+                    
+                    if (pathSegments.length < 2) {
+                        context.error(`Could not parse container and blob name from URL: ${blobUrl}`); 
+                        continue;
+                    }
+                    const containerNameFromUrl = pathSegments[0];
+                    let blobNameFromUrl = pathSegments.slice(1).join('/'); 
+                    
+                    // context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`); // Reverted diagnostic
+                    // const diagnosticTestBlobName = "testsimple.jpg"; // Reverted diagnostic
+                    // context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`); // Reverted diagnostic
+
+                    const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
+                    if (!connectionString) {
+                        context.error("Azure Storage Connection String not found."); 
+                        continue; 
+                    }
+
+                    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+                    const containerClient = blobServiceClient.getContainerClient(containerNameFromUrl);
+                    const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl); // Use actual blobNameFromUrl
+                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for: ${blobNameFromUrl}`);
+
+                    let downloadResponse;
+                    const maxRetries = 5; 
+                    const retryDelayMs = 6000; 
+                    let attempt = 0;
+                    let blobDownloaded = false;
+
+                    while (attempt < maxRetries && !blobDownloaded) {
+                        attempt++;
+                        try {
+                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${blobNameFromUrl}`);
+                            downloadResponse = await specificBlobClient.download();
+                            context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt}):`, downloadResponse); 
+                            context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt}). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
+                            if (downloadResponse?.readableStreamBody) {
+                                blobDownloaded = true;
+                            } else {
+                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${blobNameFromUrl} resolved but no readableStreamBody.`);
+                                if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries.");
+                            }
+                        } catch (downloadError) {
+                            if (downloadError instanceof RestError && downloadError.statusCode === 404 && attempt < maxRetries) {
+                                context.warn(`[HANDLER_TRACE] Blob ${blobNameFromUrl} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
+                                await delay(retryDelayMs);
+                            } else {
+                                // context.error(`[HANDLER_TRACE] Error downloading blob ${blobNameFromUrl} on attempt ${attempt}:`, downloadError); // Already logged in outer catch
+                                throw downloadError; 
+                            }
+                        }
+                    }
+
+                    if (!blobDownloaded || !downloadResponse?.readableStreamBody) {
+                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl} after ${maxRetries} attempts.`);
+                        continue; 
+                    }
+                    
+                    const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
+                    context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
+
+                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl);
+
+                } catch (innerErr) { 
+                    context.error(`Error processing event for blob URL ${blobUrl}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);
+                }
             } else {
-                context.warn("Received an event without an eventType field:", event);
+                context.log(`Received event of type ${event.eventType}, not 'Microsoft.Storage.BlobCreated'. Skipping.`);
             }
         }
-        
-        return { status: 200, body: "Simplified handler processed non-validation event(s)." };
-
-    } catch (error) {
-        context.error("Error in analyzeCreativeHttpEventGridHandler:", error);
-        // For actual event processing errors, you might want to return a 500
-        // For this diagnostic phase, returning 200 might still be okay to avoid Event Grid retries
-        // if the error is in our diagnostic logging itself.
-        // However, if request.json() fails, it's a client request issue (400) or server issue (500).
-        // Let's assume JSON parsing is the most likely error here if not validation.
-        if (error instanceof SyntaxError) { // Error from request.json()
-             context.error("Failed to parse request body as JSON:", error);
-             return { status: 400, body: "Invalid JSON format in request body."};
-        }
-        return { status: 500, body: "Error processing request in handler." };
-    }
-};
+        return { status: 200, body: "Events processed." };
+    };
 
 app.http('analyzeCreativeHttpEventGridTrigger', {
     methods: ['POST'],
