@@ -110,7 +110,7 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
             if (err) {
-                context.log(`ERROR running ffprobe on ${filePath}:`, err); // Corrected template literal
+                context.log(`ERROR running ffprobe on ${filePath}:`, err);
                 reject(err);
             } else {
                 resolve(metadata);
@@ -185,7 +185,7 @@ function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData 
         if (duration !== undefined) {
             const allowedDurations = SPEC_LIMITS.audio.allowedDurationsSec;
             const isDurationValid = allowedDurations.some(allowed => Math.abs(duration - allowed) < 0.5);
-            const durLimit = `${allowedDurations.join(', ')} sec`;
+            const durLimit = `${allowedDurations.join(', ') } sec`;
             if (isDurationValid) { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Pass", message: `Duration ${duration.toFixed(1)}s is allowed.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
             else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Fail", message: `Duration ${duration.toFixed(1)}s is not one of the allowed durations.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
         } else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Warn", message: "Could not determine duration." }); }
@@ -495,6 +495,9 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
                     } else {
                         context.warn(`Metadata 'isCtv' invalid for UUID ${uuidPart}. Assuming isCtv = false.`);
                     }
+                    // If originalFullBlobName was stored by setCreativeMetadata, we could use it here,
+                    // but originalFileName is already parsed from blobNameFromEvent.
+                    // analysisData.originalFileName = entity.originalFullBlobName || originalFileName; 
                 } else {
                     context.warn(`Metadata entity not found for RowKey (UUID) ${uuidPart}. Assuming isCtv = false.`);
                 }
@@ -657,7 +660,7 @@ async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: I
             resolve(Buffer.concat(chunks));
         });
         readableStream.on('error', (err) => {
-            log(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); // Corrected template literal
+            log(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); 
             reject(err);
         });
     });
@@ -704,14 +707,14 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     }
                     const containerNameFromUrl = pathSegments[0];
                     // Reconstruct the blob name from path segments. url.pathname is already decoded.
-                    const rawBlobNameFromPath = pathSegments.slice(1).join('/');
+                    const rawBlobNameFromPathSegments = pathSegments.slice(1).join('/');
                     // Explicitly decode this reconstructed path to ensure it's the semantic name (spaces are spaces).
-                    const decodedBlobNameForSDK = decodeURIComponent(rawBlobNameFromPath);
+                    const decodedBlobNameForSDK = decodeURIComponent(rawBlobNameFromPathSegments);
 
-                    context.log(`[HANDLER_TRACE] Original blobUrl from event: ${blobUrl}`);
-                    context.log(`[HANDLER_TRACE] Parsed container: ${containerNameFromUrl}`);
-                    context.log(`[HANDLER_TRACE] Raw blob name from path segments (after .pathname decode): ${rawBlobNameFromPath}`);
-                    context.log(`[HANDLER_TRACE] Decoded blob name for SDK: ${decodedBlobNameForSDK}`);
+                    context.log(`[DEBUG] Original blobUrl from event: ${blobUrl}`);
+                    context.log(`[DEBUG] Parsed container: ${containerNameFromUrl}`);
+                    context.log(`[DEBUG] Raw blob name from path segments (after .pathname decode): ${rawBlobNameFromPathSegments}`);
+                    context.log(`[DEBUG] Decoded blob name for SDK: ${decodedBlobNameForSDK}`);
                     
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (!connectionString) {
@@ -776,11 +779,6 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
         return { status: 200, body: "Events processed." };
     };
 
-app.http('analyzeCreativeHttpEventGridTrigger', {
-    methods: ['POST'],
-    authLevel: 'function', 
-    handler: analyzeCreativeHttpEventGridHandler
-});
 
 // Remove or comment out the old storageBlob trigger
 // app.storageBlob('analyzeCreative', {
