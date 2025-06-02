@@ -3,9 +3,9 @@ import { TableClient, AzureNamedKeyCredential, RestError } from "@azure/data-tab
 import { BlobServiceClient, StorageSharedKeyCredential } from "@azure/storage-blob";
 // Removed static import: import { fileTypeFromBuffer } from 'file-type';
 import { imageSize } from 'image-size';
-import ffmpeg from 'fluent-ffmpeg';
-import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
-import { path as ffprobePath } from '@ffprobe-installer/ffprobe';
+import ffmpeg from 'fluent-ffmpeg'; // Uncommented
+import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg'; // Uncommented
+import { path as ffprobePath } from '@ffprobe-installer/ffprobe'; // Uncommented
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -13,8 +13,8 @@ import AdmZip from 'adm-zip';
 // import { Readable } from 'stream'; // No longer directly used
 
 // Set FFMPEG and FFPROBE paths
-ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath);
+ffmpeg.setFfmpegPath(ffmpegPath); // Uncommented
+ffmpeg.setFfprobePath(ffprobePath); // Uncommented
 
 // Helper function for retries
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -112,7 +112,7 @@ const SPEC_LIMITS = {
 };
 
 // --- FFprobe Helper (existing) ---
-function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> {
+function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> { // Changed back to ffmpeg.FfprobeData
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
             if (err) {
@@ -126,6 +126,10 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
 }
 
 // --- Validation Functions (existing, unchanged) ---
+// Forward declare the type if it's causing issues, or ensure @types/fluent-ffmpeg is correct
+// For now, let's assume fluentFfmpeg.FfprobeData will resolve if the main import is fixed.
+// If not, we might need to use 'any' temporarily or fix the type import.
+// Reverted the forward declare comment as it's not needed if types resolve
 function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: InvocationContext): void {
     context.log("--- EXECUTING validateDisplay ---");
     const mime = analysisData.mimeType;
@@ -182,7 +186,7 @@ function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData 
         analysisData.validationChecks.push({ checkName: "File Size (Audio)", status: "Pass", message: msg, value: `${audioSizeMB} MB`, limit: audioLimit });
     }
 
-    if (metadata?.format) {
+    if (metadata?.format) { // metadata here is ffmpeg.FfprobeData | null
         const duration = metadata.format.duration;
         const bitrate = metadata.format.bit_rate ? Math.round(metadata.format.bit_rate / 1000) : undefined;
         analysisData.duration = duration;
@@ -229,7 +233,7 @@ function validateVideoOlv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
         analysisData.validationChecks.push({ checkName: "File Size (Video OLV)", status: "Pass", message: msg, value: `${olvSizeMB} MB`, limit: olvLimit });
     }
 
-    if (metadata?.format && metadata?.streams) {
+    if (metadata?.format && metadata?.streams) { // metadata here is ffmpeg.FfprobeData | null
         const videoStream = metadata.streams.find(s => s.codec_type === 'video');
         const duration = metadata.format.duration;
         const bitrate = metadata.format.bit_rate ? Math.round(metadata.format.bit_rate / 1000) : undefined;
@@ -283,7 +287,7 @@ function validateVideoCtv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
         analysisData.validationChecks.push({ checkName: "File Size (Video CTV)", status: "Pass", message: msg, value: `${ctvSizeGB} GB`, limit: ctvLimit });
     }
 
-    if (metadata?.format && metadata?.streams) {
+    if (metadata?.format && metadata?.streams) { // metadata here is ffmpeg.FfprobeData | null
         const videoStream = metadata.streams.find(s => s.codec_type === 'video');
         const duration = metadata.format.duration;
         const bitrate = metadata.format.bit_rate ? Math.round(metadata.format.bit_rate / 1000) : undefined;
@@ -576,14 +580,14 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
 
         context.log(`Determined creative category: ${category} (MIME: ${mime || 'N/A'}, isCtv: ${isCtv})`);
 
-        let mediaMetadata: ffmpeg.FfprobeData | null = null;
+        let mediaMetadata: ffmpeg.FfprobeData | null = null; // Changed back to ffmpeg.FfprobeData
         if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
             try {
                 tempFilePath = path.join(os.tmpdir(), blobNameFromEvent); // Use blobNameFromEvent for temp file
                 context.log(`Writing blob to temporary file: ${tempFilePath}`);
                 await fs.writeFile(tempFilePath, blobContent);
                 context.log(`Getting media metadata using ffprobe for: ${tempFilePath}`);
-                mediaMetadata = await getMediaMetadata(tempFilePath, context);
+                mediaMetadata = await getMediaMetadata(tempFilePath, context); // This now returns Promise<ffmpeg.FfprobeData>
                 context.log("Successfully retrieved media metadata.");
             } catch (error: unknown) {
                 const msg = `Error processing media file with ffprobe: ${error instanceof Error ? error.message : String(error)}`;
