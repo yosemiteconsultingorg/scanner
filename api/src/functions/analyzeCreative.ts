@@ -4,11 +4,17 @@ import { BlobServiceClient, StorageSharedKeyCredential } from "@azure/storage-bl
 // Removed static import: import { fileTypeFromBuffer } from 'file-type';
 import { imageSize } from 'image-size';
 import ffmpeg from 'fluent-ffmpeg';
+import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
+import { path as ffprobePath } from '@ffprobe-installer/ffprobe';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import AdmZip from 'adm-zip';
 // import { Readable } from 'stream'; // No longer directly used
+
+// Set FFMPEG and FFPROBE paths
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
 
 // Helper function for retries
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

@@ -16,6 +16,8 @@
     "@azure/functions": "^4.0.0",
     "@azure/identity": "^4.9.1",
     "@azure/storage-blob": "^12.27.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@microsoft/microsoft-graph-client": "^3.0.7",
     "@types/adm-zip": "^0.5.7",
     "@types/fluent-ffmpeg": "^2.1.27",
