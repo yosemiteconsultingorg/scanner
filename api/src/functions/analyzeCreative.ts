@@ -668,35 +668,68 @@ async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: I
 
 // New HTTP Trigger for Event Grid Events
 export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
-    context.log(`analyzeCreativeHttpEventGridHandler (simplified for diagnosis) invoked.`);
+    context.log(`analyzeCreativeHttpEventGridHandler invoked.`); 
+    
     try {
         const requestData = await request.json();
-        context.log("Request data received:", JSON.stringify(requestData, null, 2));
+        // It's good practice to log the raw request for debugging Event Grid issues
+        context.log("Raw request data from Event Grid:", JSON.stringify(requestData, null, 2));
 
-        if (Array.isArray(requestData) && requestData.length > 0) {
-            requestData.forEach((event: any, index: number) => { // Use any for simplicity in diagnostic
-                context.log(`Event ${index} type: ${event.eventType}`);
-                if (event.eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
-                    if (event.data && event.data.validationCode) {
-                        const validationCode = event.data.validationCode;
-                        context.log(`Responding to Event Grid validation handshake with code: ${validationCode}`);
-                        // Note: This return is inside a forEach, it won't directly return from the handler.
-                        // For a real validation, the check should be done before looping through other events.
-                        // However, for this diagnostic, we just want to see if it logs.
-                        // The actual validation response should be handled by the primary check before this loop.
+        // Handle Event Grid Subscription Validation Handshake FIRST
+        // Event Grid sends an array of events, even for validation.
+        if (Array.isArray(requestData) && requestData.length > 0 && requestData[0].data && requestData[0].eventType === "Microsoft.EventGrid.SubscriptionValidationEvent") {
+            const validationEvent = requestData[0]; // data is on the event object itself for validation
+            const validationCode = validationEvent.data.validationCode;
+            if (validationCode) {
+                context.log(`Responding to Event Grid validation handshake with code: ${validationCode}`);
+                return { // IMPORTANT: Return immediately for validation
+                    status: 200,
+                    jsonBody: {
+                        validationResponse: validationCode
                     }
-                } else if (event.eventType === 'Microsoft.Storage.BlobCreated') {
-                    context.log(`BlobCreated event data for event ${index}:`, JSON.stringify(event.data, null, 2));
-                }
-            });
+                };
+            } else {
+                context.error("SubscriptionValidationEvent received, but validationCode is missing in data.");
+                return { status: 400, body: "Validation event received, but validationCode missing." };
+            }
         }
-        // Always return 200 OK for this diagnostic version to satisfy Event Grid delivery
-        return { status: 200, body: "Simplified handler processed event." };
+
+        // If it's not a validation event, proceed with simplified logging for other events
+        // Event Grid can send a single event or an array of events.
+        const eventsToProcess = Array.isArray(requestData) ? requestData : [requestData];
+
+        for (const event of eventsToProcess) {
+            // Ensure event and event.eventType are defined before accessing
+            if (event && event.eventType) {
+                context.log(`Processing event type: ${event.eventType}`);
+                if (event.eventType === 'Microsoft.Storage.BlobCreated') {
+                    // Log specific data for BlobCreated events
+                    if (event.data) {
+                        context.log(`BlobCreated event data:`, JSON.stringify(event.data, null, 2));
+                    } else {
+                        context.warn("BlobCreated event received without data field.");
+                    }
+                }
+                // Add handling for other event types if necessary
+            } else {
+                context.warn("Received an event without an eventType field:", event);
+            }
+        }
+        
+        return { status: 200, body: "Simplified handler processed non-validation event(s)." };
 
     } catch (error) {
-        context.error("Error in simplified analyzeCreativeHttpEventGridHandler:", error);
-        // Still return 200 so Event Grid doesn't retry if the error is in our logging/parsing
-        return { status: 200, body: "Error in simplified handler, but acknowledged." };
+        context.error("Error in analyzeCreativeHttpEventGridHandler:", error);
+        // For actual event processing errors, you might want to return a 500
+        // For this diagnostic phase, returning 200 might still be okay to avoid Event Grid retries
+        // if the error is in our diagnostic logging itself.
+        // However, if request.json() fails, it's a client request issue (400) or server issue (500).
+        // Let's assume JSON parsing is the most likely error here if not validation.
+        if (error instanceof SyntaxError) { // Error from request.json()
+             context.error("Failed to parse request body as JSON:", error);
+             return { status: 400, body: "Invalid JSON format in request body."};
+        }
+        return { status: 500, body: "Error processing request in handler." };
     }
 };
 
