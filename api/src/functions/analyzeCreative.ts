@@ -110,7 +110,7 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
             if (err) {
-                context.log(`ERROR running ffprobe on ${filePath}:`, err);
+                context.log(`ERROR running ffprobe on ${filePath}:`, err); // Corrected template literal
                 reject(err);
             } else {
                 resolve(metadata);
@@ -185,7 +185,7 @@ function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData 
         if (duration !== undefined) {
             const allowedDurations = SPEC_LIMITS.audio.allowedDurationsSec;
             const isDurationValid = allowedDurations.some(allowed => Math.abs(duration - allowed) < 0.5);
-            const durLimit = `${allowedDurations.join(', ') } sec`;
+            const durLimit = `${allowedDurations.join(', ')} sec`;
             if (isDurationValid) { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Pass", message: `Duration ${duration.toFixed(1)}s is allowed.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
             else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Fail", message: `Duration ${duration.toFixed(1)}s is not one of the allowed durations.`, value: `${duration.toFixed(1)}s`, limit: durLimit }); }
         } else { analysisData.validationChecks.push({ checkName: "Duration (Audio)", status: "Warn", message: "Could not determine duration." }); }
@@ -495,9 +495,6 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
                     } else {
                         context.warn(`Metadata 'isCtv' invalid for UUID ${uuidPart}. Assuming isCtv = false.`);
                     }
-                    // If originalFullBlobName was stored by setCreativeMetadata, we could use it here,
-                    // but originalFileName is already parsed from blobNameFromEvent.
-                    // analysisData.originalFileName = entity.originalFullBlobName || originalFileName; 
                 } else {
                     context.warn(`Metadata entity not found for RowKey (UUID) ${uuidPart}. Assuming isCtv = false.`);
                 }
@@ -660,7 +657,7 @@ async function streamToBuffer(readableStream: NodeJS.ReadableStream, context?: I
             resolve(Buffer.concat(chunks));
         });
         readableStream.on('error', (err) => {
-            log(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); 
+            log(`[STREAM_DEBUG] streamToBuffer: error event received: ${err.message}`); // Corrected template literal
             reject(err);
         });
     });
@@ -696,7 +693,6 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                 const blobUrl = event.data.url;
                 context.log(`Processing BlobCreated event for URL: ${blobUrl}`); 
 
-                let diagnosticTestBlobName = "testsimple.jpg"; // Define at a scope accessible by catch
                 try { 
                     context.log('[HANDLER_ENTRY_TRY_BLOCK] Entered try block for event processing.');
                     const url = new URL(blobUrl);
@@ -707,12 +703,16 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                         continue;
                     }
                     const containerNameFromUrl = pathSegments[0];
-                    let blobNameFromUrl = pathSegments.slice(1).join('/'); 
-                    
-                    // context.log(`[DIAGNOSTIC_INFO] Original blobNameFromUrl from event: ${blobNameFromUrl}`); // Reverted diagnostic
-                    // const diagnosticTestBlobName = "testsimple.jpg"; // Reverted diagnostic
-                    // context.log(`[DIAGNOSTIC_INFO] Attempting to download hardcoded blob: ${diagnosticTestBlobName} from container: ${containerNameFromUrl}`); // Reverted diagnostic
+                    // Reconstruct the blob name from path segments. url.pathname is already decoded.
+                    const rawBlobNameFromPath = pathSegments.slice(1).join('/');
+                    // Explicitly decode this reconstructed path to ensure it's the semantic name (spaces are spaces).
+                    const decodedBlobNameForSDK = decodeURIComponent(rawBlobNameFromPath);
 
+                    context.log(`[HANDLER_TRACE] Original blobUrl from event: ${blobUrl}`);
+                    context.log(`[HANDLER_TRACE] Parsed container: ${containerNameFromUrl}`);
+                    context.log(`[HANDLER_TRACE] Raw blob name from path segments (after .pathname decode): ${rawBlobNameFromPath}`);
+                    context.log(`[HANDLER_TRACE] Decoded blob name for SDK: ${decodedBlobNameForSDK}`);
+                    
                     const connectionString = process.env.AzureWebJobsStorage_ConnectionString;
                     if (!connectionString) {
                         context.error("Azure Storage Connection String not found."); 
@@ -721,8 +721,10 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 
                     const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
                     const containerClient = blobServiceClient.getContainerClient(containerNameFromUrl);
-                    const specificBlobClient = containerClient.getBlobClient(blobNameFromUrl); // Use actual blobNameFromUrl
-                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for: ${blobNameFromUrl}`);
+                    // Pass the fully decoded blob name to the SDK client.
+                    // The SDK will handle URI encoding this name when making the actual HTTP request.
+                    const specificBlobClient = containerClient.getBlobClient(decodedBlobNameForSDK); 
+                    context.log(`[HANDLER_TRACE] Before specificBlobClient.download() for (using decoded name): ${decodedBlobNameForSDK}`);
 
                     let downloadResponse;
                     const maxRetries = 5; 
@@ -733,36 +735,36 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
                     while (attempt < maxRetries && !blobDownloaded) {
                         attempt++;
                         try {
-                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${blobNameFromUrl}`);
+                            context.log(`[HANDLER_TRACE] Attempt ${attempt} to download blob: ${decodedBlobNameForSDK}`);
                             downloadResponse = await specificBlobClient.download();
                             context.log(`[HANDLER_TRACE] downloadResponse object (Attempt ${attempt}):`, downloadResponse); 
                             context.log(`[HANDLER_TRACE] After specificBlobClient.download() (Attempt ${attempt}). Response has readableStreamBody: ${!!downloadResponse?.readableStreamBody}`);
                             if (downloadResponse?.readableStreamBody) {
                                 blobDownloaded = true;
                             } else {
-                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${blobNameFromUrl} resolved but no readableStreamBody.`);
+                                context.warn(`[HANDLER_TRACE] Download attempt ${attempt} for ${decodedBlobNameForSDK} resolved but no readableStreamBody.`);
                                 if (attempt < maxRetries) await delay(retryDelayMs); else throw new Error("No readableStreamBody after max retries.");
                             }
                         } catch (downloadError) {
                             if (downloadError instanceof RestError && downloadError.statusCode === 404 && attempt < maxRetries) {
-                                context.warn(`[HANDLER_TRACE] Blob ${blobNameFromUrl} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
+                                context.warn(`[HANDLER_TRACE] Blob ${decodedBlobNameForSDK} not found on attempt ${attempt}. Retrying in ${retryDelayMs}ms...`);
                                 await delay(retryDelayMs);
                             } else {
-                                // context.error(`[HANDLER_TRACE] Error downloading blob ${blobNameFromUrl} on attempt ${attempt}:`, downloadError); // Already logged in outer catch
                                 throw downloadError; 
                             }
                         }
                     }
 
                     if (!blobDownloaded || !downloadResponse?.readableStreamBody) {
-                        context.error(`Failed to get readable stream for blob: ${blobNameFromUrl} after ${maxRetries} attempts.`);
+                        context.error(`Failed to get readable stream for blob: ${decodedBlobNameForSDK} after ${maxRetries} attempts.`);
                         continue; 
                     }
                     
                     const blobContent = await streamToBuffer(downloadResponse.readableStreamBody, context);
-                    context.log(`Successfully downloaded blob: ${blobNameFromUrl}, size: ${blobContent.length} bytes`);
+                    context.log(`Successfully downloaded blob: ${decodedBlobNameForSDK}, size: ${blobContent.length} bytes`);
 
-                    await performCreativeAnalysis(blobContent, context, blobNameFromUrl);
+                    // Pass the decoded blob name to performCreativeAnalysis
+                    await performCreativeAnalysis(blobContent, context, decodedBlobNameForSDK);
 
                 } catch (innerErr) { 
                     context.error(`Error processing event for blob URL ${blobUrl}: ${innerErr instanceof Error ? innerErr.message : String(innerErr)}`, innerErr);

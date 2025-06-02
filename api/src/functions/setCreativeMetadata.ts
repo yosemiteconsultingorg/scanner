@@ -37,15 +37,16 @@ export async function setCreativeMetadata(request: HttpRequest, context: Invocat
         return { status: 400, body: "Please pass blobName (string) and isCtv (boolean) in the request body" };
     }
 
-    const { blobName, isCtv } = body;
+    const { blobName, isCtv } = body; // blobName here is in format [UUID]-[OriginalFileName].ext
 
-    // Extract UUID part from blobName (e.g., "uuid.ext" -> "uuid")
-    const uuidPart = blobName.includes('.') ? blobName.substring(0, blobName.lastIndexOf('.')) : blobName;
-    if (!uuidPart) {
-        context.error(`Could not extract UUID from blobName: ${blobName}`);
-        return { status: 400, body: "Invalid blobName format." };
+    // Correctly extract the UUID part (the part before the first hyphen)
+    const uuidPart = blobName.split('-')[0];
+    
+    if (!uuidPart || uuidPart.length !== 36) { // Basic check for UUID format (36 chars)
+        context.error(`Could not extract valid UUID from blobName: ${blobName}. Extracted: '${uuidPart}'`);
+        return { status: 400, body: "Invalid blobName format - cannot determine UUID." };
     }
-    context.log(`Using UUID part as RowKey: ${uuidPart} (from original blobName: ${blobName})`);
+    context.log(`Using UUID part as RowKey: ${uuidPart} (from original full blobName: ${blobName})`);
 
     const connectionString = process.env.AzureWebJobsStorage_ConnectionString; // Using the same storage account for tables
     if (!connectionString) {
