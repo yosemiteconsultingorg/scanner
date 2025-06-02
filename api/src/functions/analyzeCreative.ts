@@ -786,3 +786,9 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 //     connection: 'AzureWebJobsStorage_ConnectionString',
 //     handler: analyzeCreative // This would now point to the old signature
 // });
+
+app.http('analyzeCreativeHttpEventGridTrigger', {
+    methods: ['POST'],
+    authLevel: 'function', 
+    handler: analyzeCreativeHttpEventGridHandler
+});
