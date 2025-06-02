@@ -39,12 +39,15 @@ export async function setCreativeMetadata(request: HttpRequest, context: Invocat
 
     const { blobName, isCtv } = body; // blobName here is in format [UUID]-[OriginalFileName].ext
 
-    // Correctly extract the UUID part (the part before the first hyphen)
-    const uuidPart = blobName.split('-')[0];
-    
-    if (!uuidPart || uuidPart.length !== 36) { // Basic check for UUID format (36 chars)
-        context.error(`Could not extract valid UUID from blobName: ${blobName}. Extracted: '${uuidPart}'`);
-        return { status: 400, body: "Invalid blobName format - cannot determine UUID." };
+    // The UUID is the first 36 characters of the blobName
+    const uuidPart = blobName.substring(0, 36); 
+
+    // A simple regex to check if it looks like a UUID.
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    if (blobName.length < 36 || !uuidRegex.test(uuidPart)) { 
+        context.error(`Could not extract valid 36-character UUID from start of blobName: ${blobName}. Extracted: '${uuidPart}' (length: ${uuidPart.length})`);
+        return { status: 400, body: "Invalid blobName format - cannot determine UUID prefix." };
     }
     context.log(`Using UUID part as RowKey: ${uuidPart} (from original full blobName: ${blobName})`);
 
