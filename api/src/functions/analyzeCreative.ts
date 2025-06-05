@@ -106,7 +106,8 @@ const SPEC_LIMITS = {
 };
 
 // --- FFprobe Helper (existing) ---
-function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> {
+/* // Commented out for testing
+function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> { 
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
             if (err) {
@@ -118,6 +119,7 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
         });
     });
 }
+*/
 
 // --- Validation Functions (existing, unchanged) ---
 function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: InvocationContext): void {
@@ -571,13 +573,14 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
         context.log(`Determined creative category: ${category} (MIME: ${mime || 'N/A'}, isCtv: ${isCtv})`);
 
         let mediaMetadata: ffmpeg.FfprobeData | null = null;
+        /* // Commented out for testing FFmpeg impact
         if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
             try {
                 tempFilePath = path.join(os.tmpdir(), blobNameFromEvent); // Use blobNameFromEvent for temp file
                 context.log(`Writing blob to temporary file: ${tempFilePath}`);
                 await fs.writeFile(tempFilePath, blobContent);
                 context.log(`Getting media metadata using ffprobe for: ${tempFilePath}`);
-                mediaMetadata = await getMediaMetadata(tempFilePath, context);
+                mediaMetadata = await getMediaMetadata(tempFilePath, context); 
                 context.log("Successfully retrieved media metadata.");
             } catch (error: unknown) {
                 const msg = `Error processing media file with ffprobe: ${error instanceof Error ? error.message : String(error)}`;
@@ -586,6 +589,12 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
                 mediaMetadata = null;
             }
         }
+        */
+        // Since mediaMetadata will always be null, add a placeholder check or adjust validation functions
+        if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
+            analysisData.validationChecks.push({ checkName: "Media Metadata", status: "Warn", message: "FFmpeg processing temporarily disabled for testing." });
+        }
+
 
         context.log(`Running validations for category: ${category}`);
         switch (category) {
