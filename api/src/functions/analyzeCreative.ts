@@ -3,7 +3,7 @@ import { TableClient, AzureNamedKeyCredential, RestError } from "@azure/data-tab
 import { BlobServiceClient, StorageSharedKeyCredential } from "@azure/storage-blob";
 // Removed static import: import { fileTypeFromBuffer } from 'file-type';
 import { imageSize } from 'image-size';
-import ffmpeg from 'fluent-ffmpeg';
+// import ffmpeg from 'fluent-ffmpeg'; // Commented out for testing
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -157,7 +157,7 @@ function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: Invo
     }
 }
 
-function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
+function validateAudio(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
     context.log("--- EXECUTING validateAudio ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -206,7 +206,7 @@ function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData 
     }
 }
 
-function validateVideoOlv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
+function validateVideoOlv(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
     context.log("--- EXECUTING validateVideoOlv ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -260,7 +260,7 @@ function validateVideoOlv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeDa
     }
 }
 
-function validateVideoCtv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
+function validateVideoCtv(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
     context.log("--- EXECUTING validateVideoCtv ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -572,7 +572,7 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
 
         context.log(`Determined creative category: ${category} (MIME: ${mime || 'N/A'}, isCtv: ${isCtv})`);
 
-        let mediaMetadata: ffmpeg.FfprobeData | null = null;
+        let mediaMetadata: any | null = null; // Changed ffmpeg.FfprobeData to any
         /* // Commented out for testing FFmpeg impact
         if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
             try {
@@ -795,3 +795,9 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 //     connection: 'AzureWebJobsStorage_ConnectionString',
 //     handler: analyzeCreative // This would now point to the old signature
 // });
+
+app.http('analyzeCreativeHttpEventGridTrigger', {
+    methods: ['POST'],
+    authLevel: 'function', 
+    handler: analyzeCreativeHttpEventGridHandler
+});
