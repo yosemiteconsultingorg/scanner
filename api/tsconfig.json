@@ -10,5 +10,14 @@
     "skipLibCheck": true, // Skip checking library declaration files
     "esModuleInterop": true, // Allow default imports from modules with no default export
     "allowSyntheticDefaultImports": true // Allow default imports from modules with no default export
-  }
+  },
+  "include": [
+    "src/**/*" // Include all files in the src directory
+  ],
+  "exclude": [
+    "node_modules", // Standard exclusion
+    "dist",         // Standard exclusion for output directory
+    "src/functions/_disabled_sources_/**/*", // Exclude disabled source files
+    "src/functions/__tests__/_disabled_tests_/**/*" // Exclude disabled test files
+  ]
 }
