@@ -5,11 +5,7 @@
     "outDir": "dist",
     "rootDir": ".", // Keep rootDir as "."
     "sourceMap": true,
-    "strict": false,
-    "moduleResolution": "node", // Add module resolution strategy
-    "skipLibCheck": true, // Skip checking library declaration files
-    "esModuleInterop": true, // Allow default imports from modules with no default export
-    "allowSyntheticDefaultImports": true // Allow default imports from modules with no default export
+    "strict": false
   },
   "include": [
     "src/**/*" // Include all files in the src directory

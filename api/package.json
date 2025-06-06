@@ -2,6 +2,7 @@
   "name": "",
   "version": "1.0.0",
   "description": "",
+  "main": "dist/src/functions/*.js",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
@@ -11,26 +12,19 @@
     "test": "jest"
   },
   "dependencies": {
-    "@azure/data-tables": "^13.3.0",
     "@azure/functions": "^4.0.0",
-    "@azure/identity": "^4.9.1",
     "@azure/storage-blob": "^12.27.0",
-    "@microsoft/microsoft-graph-client": "^3.0.7",
-    "@types/adm-zip": "^0.5.7",
-    "@types/uuid": "^10.0.0",
-    "adm-zip": "^0.5.16",
-    "file-type": "^20.5.0",
-    "image-size": "^2.0.2",
-    "isomorphic-fetch": "^3.0.0",
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/jest": "^29.5.14",
+    "@types/uuid": "^10.0.0",
     "@types/node": "18.x",
     "azure-functions-core-tools": "^4.x",
     "jest": "^29.7.0",
     "rimraf": "^5.0.0",
     "ts-jest": "^29.3.4",
-    "typescript": "^4.0.0"
+    "typescript": "^5.0.0"
   }
 }
