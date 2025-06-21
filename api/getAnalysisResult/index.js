@@ -1,5 +1,3 @@
-//Test updating the code deployed to Azure Function App (no code change, just adding this comment) : by Mohamed
-
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { TableClient, AzureNamedKeyCredential, RestError } from "@azure/data-tables"; // Removed TableEntity
 

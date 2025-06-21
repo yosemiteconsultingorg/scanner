@@ -1,5 +1,3 @@
-//Test updating the code deployed to Azure Function App (no code change, just adding this comment) : by Mohamed
-
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { Client } from "@microsoft/microsoft-graph-client";
 import { TokenCredentialAuthenticationProvider } from "@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials";
