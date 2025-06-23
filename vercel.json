@@ -6,12 +6,6 @@
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/:path*" }
   ],
-  "functions": {
-    "api/src/functions/**/*.ts": {
-      "memory": 1024,
-      "maxDuration": 10
-    }
-  },
   "env": {
     "NODE_ENV": "production"
   }
