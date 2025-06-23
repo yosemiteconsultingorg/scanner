@@ -3,7 +3,7 @@ import { TableClient, AzureNamedKeyCredential, RestError } from "@azure/data-tab
 import { BlobServiceClient, StorageSharedKeyCredential } from "@azure/storage-blob";
 // Removed static import: import { fileTypeFromBuffer } from 'file-type';
 import { imageSize } from 'image-size';
-// import ffmpeg from 'fluent-ffmpeg'; // Commented out for testing
+import ffmpeg from 'fluent-ffmpeg';
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
@@ -106,8 +106,7 @@ const SPEC_LIMITS = {
 };
 
 // --- FFprobe Helper (existing) ---
-/* // Commented out for testing
-function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> { 
+function getMediaMetadata(filePath: string, context: InvocationContext): Promise<ffmpeg.FfprobeData> {
     return new Promise((resolve, reject) => {
         ffmpeg(filePath).ffprobe((err, metadata) => {
             if (err) {
@@ -119,7 +118,6 @@ function getMediaMetadata(filePath: string, context: InvocationContext): Promise
         });
     });
 }
-*/
 
 // --- Validation Functions (existing, unchanged) ---
 function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: InvocationContext): void {
@@ -157,7 +155,7 @@ function validateDisplay(analysisData: AnalysisData, blob: Buffer, context: Invo
     }
 }
 
-function validateAudio(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
+function validateAudio(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
     context.log("--- EXECUTING validateAudio ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -206,7 +204,7 @@ function validateAudio(analysisData: AnalysisData, metadata: any | null, context
     }
 }
 
-function validateVideoOlv(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
+function validateVideoOlv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
     context.log("--- EXECUTING validateVideoOlv ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -260,7 +258,7 @@ function validateVideoOlv(analysisData: AnalysisData, metadata: any | null, cont
     }
 }
 
-function validateVideoCtv(analysisData: AnalysisData, metadata: any | null, context: InvocationContext): void { // Changed ffmpeg.FfprobeData to any
+function validateVideoCtv(analysisData: AnalysisData, metadata: ffmpeg.FfprobeData | null, context: InvocationContext): void {
     context.log("--- EXECUTING validateVideoCtv ---");
     const mime = analysisData.mimeType;
     const blobSize = analysisData.blobSize;
@@ -572,15 +570,14 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
 
         context.log(`Determined creative category: ${category} (MIME: ${mime || 'N/A'}, isCtv: ${isCtv})`);
 
-        let mediaMetadata: any | null = null; // Changed ffmpeg.FfprobeData to any
-        /* // Commented out for testing FFmpeg impact
+        let mediaMetadata: ffmpeg.FfprobeData | null = null;
         if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
             try {
                 tempFilePath = path.join(os.tmpdir(), blobNameFromEvent); // Use blobNameFromEvent for temp file
                 context.log(`Writing blob to temporary file: ${tempFilePath}`);
                 await fs.writeFile(tempFilePath, blobContent);
                 context.log(`Getting media metadata using ffprobe for: ${tempFilePath}`);
-                mediaMetadata = await getMediaMetadata(tempFilePath, context); 
+                mediaMetadata = await getMediaMetadata(tempFilePath, context);
                 context.log("Successfully retrieved media metadata.");
             } catch (error: unknown) {
                 const msg = `Error processing media file with ffprobe: ${error instanceof Error ? error.message : String(error)}`;
@@ -589,12 +586,6 @@ export async function performCreativeAnalysis(blobContent: Buffer, context: Invo
                 mediaMetadata = null;
             }
         }
-        */
-        // Since mediaMetadata will always be null, add a placeholder check or adjust validation functions
-        if (category === 'audio' || category === 'video_olv' || category === 'video_ctv') {
-            analysisData.validationChecks.push({ checkName: "Media Metadata", status: "Warn", message: "FFmpeg processing temporarily disabled for testing." });
-        }
-
 
         context.log(`Running validations for category: ${category}`);
         switch (category) {
@@ -795,9 +786,3 @@ export const analyzeCreativeHttpEventGridHandler = async (request: HttpRequest, 
 //     connection: 'AzureWebJobsStorage_ConnectionString',
 //     handler: analyzeCreative // This would now point to the old signature
 // });
-
-app.http('analyzeCreativeHttpEventGridTrigger', {
-    methods: ['POST'],
-    authLevel: 'function', 
-    handler: analyzeCreativeHttpEventGridHandler
-});
